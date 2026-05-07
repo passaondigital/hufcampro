@@ -1,21 +1,36 @@
 import { memo } from "react";
 import { cn } from "@/lib/utils";
-import { type HoofView, HOOF_VIEW_CONFIGS } from "./types";
+import { type HoofView, type TiltZone, HOOF_VIEW_CONFIGS } from "./types";
 
 interface CameraGuideOverlayProps {
   view: HoofView;
-  isLevel: boolean;
+  tiltZone: TiltZone;
   tiltAngle: number;
   requiresLevel: boolean;
 }
 
-export const CameraGuideOverlay = memo(function CameraGuideOverlay({ view, isLevel, tiltAngle, requiresLevel }: CameraGuideOverlayProps) {
+export const CameraGuideOverlay = memo(function CameraGuideOverlay({ view, tiltZone, tiltAngle, requiresLevel }: CameraGuideOverlayProps) {
   const config = HOOF_VIEW_CONFIGS.find(c => c.id === view);
   if (!config || config.guideType === "none") return null;
 
   const lineColor = !requiresLevel
     ? "rgba(255,255,255,0.6)"
-    : isLevel ? "rgba(34,197,94,0.8)" : "rgba(239,68,68,0.8)";
+    : tiltZone === "good"  ? "rgba(34,197,94,0.8)"
+    : tiltZone === "warn"  ? "rgba(251,146,60,0.8)"
+    :                        "rgba(239,68,68,0.8)";
+
+  const hintClass = !requiresLevel
+    ? "bg-black/50 text-white"
+    : tiltZone === "good"  ? "bg-green-500/20 text-green-100 border border-green-500/30"
+    : tiltZone === "warn"  ? "bg-orange-500/20 text-orange-100 border border-orange-500/30"
+    :                        "bg-red-500/20 text-red-100 border border-red-500/30";
+
+  const hintText = requiresLevel && tiltZone !== "good"
+    ? tiltZone === "warn"
+      ? `Neigung reduzieren (${Math.round(tiltAngle)}°)`
+      : `Bitte Handy senkrecht halten! (${Math.round(tiltAngle)}°)`
+    : config.hint;
+
   const shadowFilter = "drop-shadow(0 0 2px rgba(0,0,0,0.8)) drop-shadow(0 0 4px rgba(0,0,0,0.5))";
 
   return (
@@ -24,21 +39,16 @@ export const CameraGuideOverlay = memo(function CameraGuideOverlay({ view, isLev
         <span className="text-xs font-bold text-white tracking-wider">HufCamPro</span>
       </div>
       <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ filter: shadowFilter }} aria-hidden="true">
-        {config.guideType === "t-guide" && <TGuide lineColor={lineColor} />}
-        {config.guideType === "l-guide" && <LGuide lineColor={lineColor} />}
+        {config.guideType === "t-guide"      && <TGuide      lineColor={lineColor} />}
+        {config.guideType === "l-guide"      && <LGuide      lineColor={lineColor} />}
         {config.guideType === "target-guide" && <TargetGuide lineColor={lineColor} />}
       </svg>
       <div className="absolute bottom-20 left-4 right-4">
-        <div className={cn("px-3 py-2 rounded-lg text-center text-sm font-medium backdrop-blur-sm",
-          !requiresLevel ? "bg-black/50 text-white"
-          : isLevel ? "bg-green-500/20 text-green-100 border border-green-500/30"
-          : "bg-red-500/20 text-red-100 border border-red-500/30")}>
-          {requiresLevel && !isLevel
-            ? <span>&#9888;&#65039; Bitte Handy senkrecht halten! ({Math.round(tiltAngle)}&deg; Neigung)</span>
-            : <span>{config.hint}</span>}
+        <div className={cn("px-3 py-2 rounded-lg text-center text-sm font-medium backdrop-blur-sm", hintClass)}>
+          <span>{hintText}</span>
         </div>
       </div>
-      {requiresLevel && <BubbleLevel isLevel={isLevel} tiltAngle={tiltAngle} />}
+      {requiresLevel && <BubbleLevel tiltZone={tiltZone} tiltAngle={tiltAngle} />}
     </div>
   );
 });
@@ -82,20 +92,24 @@ function TargetGuide({ lineColor }: { lineColor: string }) {
   );
 }
 
-const BubbleLevel = memo(function BubbleLevel({ isLevel, tiltAngle }: { isLevel: boolean; tiltAngle: number }) {
+const BubbleLevel = memo(function BubbleLevel({ tiltZone, tiltAngle }: { tiltZone: TiltZone; tiltAngle: number }) {
   const maxOffset = 12;
   const offset = Math.min(Math.max((tiltAngle / 15) * maxOffset, -maxOffset), maxOffset);
+  const c = tiltZone === "good"
+    ? { border: "border-green-500",  bg: "bg-green-500/10",  dash: "border-green-400",  dot: "bg-green-500",  text: "text-green-500"  }
+    : tiltZone === "warn"
+    ? { border: "border-orange-500", bg: "bg-orange-500/10", dash: "border-orange-400", dot: "bg-orange-500", text: "text-orange-500" }
+    : { border: "border-red-500",    bg: "bg-red-500/10",    dash: "border-red-400",    dot: "bg-red-500",    text: "text-red-500"    };
+
   return (
     <div className="absolute top-4 right-4 flex flex-col items-center gap-1 pointer-events-none">
-      <div className={cn("w-10 h-10 rounded-full border-2 flex items-center justify-center relative overflow-hidden",
-        isLevel ? "border-green-500 bg-green-500/10" : "border-red-500 bg-red-500/10")}>
-        <div className={cn("w-6 h-6 rounded-full border-2 border-dashed", isLevel ? "border-green-400" : "border-red-400")} />
-        <div className={cn("absolute w-3 h-3 rounded-full transition-all duration-150",
-          isLevel ? "bg-green-500" : "bg-red-500")}
+      <div className={cn("w-10 h-10 rounded-full border-2 flex items-center justify-center relative overflow-hidden", c.border, c.bg)}>
+        <div className={cn("w-6 h-6 rounded-full border-2 border-dashed", c.dash)} />
+        <div className={cn("absolute w-3 h-3 rounded-full transition-all duration-150", c.dot)}
           style={{ transform: `translate(${offset}px, ${offset * 0.5}px)` }} />
       </div>
-      <span className={cn("text-[10px] font-bold", isLevel ? "text-green-500" : "text-red-500")}>
-        {isLevel ? "Level" : `${Math.round(tiltAngle)}°`}
+      <span className={cn("text-[10px] font-bold", c.text)}>
+        {tiltZone === "good" ? "Level" : `${Math.round(tiltAngle)}°`}
       </span>
     </div>
   );

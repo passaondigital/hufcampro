@@ -9,7 +9,7 @@ import { CameraGuideOverlay } from "./CameraGuideOverlay";
 import { GuideOverlay } from "./GuideOverlay";
 import { useDeviceOrientation } from "@/hooks/useDeviceOrientation";
 import { saveSession } from "@/lib/db";
-import type { PerspectiveId, PhotoData, HoofData } from "./types";
+import { HOOF_VIEW_CONFIGS, type PerspectiveId, type PhotoData, type HoofData, type OrientationSnapshot } from "./types";
 import jsPDF from "jspdf";
 
 const HOOVES = [
@@ -57,12 +57,13 @@ export function HufCamPro({ onSessionSaved }: { onSessionSaved?: () => void }) {
   const [lightStatus, setLightStatus] = useState<"green" | "yellow" | "red" | null>(null);
   const [bgOption, setBgOption] = useState<"white" | "black" | "transparent">("transparent");
   const [isRemovingBg, setIsRemovingBg] = useState(false);
+  const [capturedOrientation, setCapturedOrientation] = useState<OrientationSnapshot | null>(null);
 
   const videoRef    = useRef<HTMLVideoElement>(null);
   const canvasRef   = useRef<HTMLCanvasElement>(null);
   const streamRef   = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { isLevel, tiltAngle, requestPermission } = useDeviceOrientation();
+  const { tiltAngle, tiltZone, alpha, beta, gamma, requestPermission } = useDeviceOrientation();
 
   const currentHoof        = HOOVES[currentHoofIndex];
   const currentPerspective = PERSPECTIVES[currentPerspectiveIndex];
@@ -70,6 +71,8 @@ export function HufCamPro({ onSessionSaved }: { onSessionSaved?: () => void }) {
   const currentPhoto       = currentHoofData?.photos.get(currentPerspective.id);
   const photosForCurrentHoof = currentHoofData?.photos.size || 0;
   const totalPhotos = Array.from(hoofData.values()).reduce((s, hd) => s + hd.photos.size, 0);
+  const requiresLevel = HOOF_VIEW_CONFIGS.find(c => c.id === currentPerspective.id)?.requiresLevel ?? true;
+  const canCapture = !requiresLevel || tiltZone !== "block";
 
   // ── Camera ────────────────────────────────────────────────────────────
   const startCamera = useCallback(async () => {
@@ -154,8 +157,9 @@ export function HufCamPro({ onSessionSaved }: { onSessionSaved?: () => void }) {
     if (!ctx) return;
     c.width = v.videoWidth; c.height = v.videoHeight;
     ctx.drawImage(v, 0, 0);
+    setCapturedOrientation({ alpha, beta, gamma, tiltAngle, tiltZone });
     setCapturedPhoto(c.toDataURL("image/jpeg", 0.92));
-  }, [isCameraReady]);
+  }, [isCameraReady, alpha, beta, gamma, tiltAngle, tiltZone]);
 
   const handleGalleryUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -191,13 +195,19 @@ export function HufCamPro({ onSessionSaved }: { onSessionSaved?: () => void }) {
     setHoofData(prev => {
       const m = new Map(prev);
       const ex = m.get(currentHoof.id) || { photos: new Map() };
-      ex.photos.set(currentPerspective.id, { dataUrl: capturedPhoto, perspective: currentPerspective.id, timestamp: Date.now() });
+      ex.photos.set(currentPerspective.id, {
+        dataUrl: capturedPhoto,
+        perspective: currentPerspective.id,
+        timestamp: Date.now(),
+        orientationData: capturedOrientation ?? undefined,
+      });
       m.set(currentHoof.id, ex);
       return m;
     });
     setCapturedPhoto(null);
+    setCapturedOrientation(null);
     if (currentPerspectiveIndex < PERSPECTIVES.length - 1) setCurrentPerspectiveIndex(i => i + 1);
-  }, [capturedPhoto, currentHoof, currentPerspective, currentPerspectiveIndex]);
+  }, [capturedPhoto, capturedOrientation, currentHoof, currentPerspective, currentPerspectiveIndex]);
 
   const removePhoto = useCallback((perspId: PerspectiveId) => {
     setHoofData(prev => {
@@ -373,17 +383,25 @@ export function HufCamPro({ onSessionSaved }: { onSessionSaved?: () => void }) {
     if (completedCollages.length === 0) return;
     setIsSavingSession(true);
     try {
+      const solarPhotos = completedCollages
+        .map(c => {
+          const photo = hoofData.get(c.hoofId)?.photos.get("solar");
+          if (!photo) return null;
+          return { hoofId: c.hoofId, dataUrl: photo.dataUrl };
+        })
+        .filter((p): p is { hoofId: HoofId; dataUrl: string } => p !== null);
       await saveSession({
         horseName: horseName || "Unbekannt",
         date: new Date().toLocaleDateString("de-DE"),
         timestamp: Date.now(),
         collages: completedCollages.map(c => ({ hoofId: c.hoofId, collageUrl: c.collageUrl })),
         watermark: watermark || "HUFCAMPRO",
+        ...(solarPhotos.length > 0 ? { solarPhotos } : {}),
       });
       onSessionSaved?.();
     } catch (e) { console.error(e); }
     finally { setIsSavingSession(false); }
-  }, [completedCollages, horseName, watermark, onSessionSaved]);
+  }, [completedCollages, hoofData, horseName, watermark, onSessionSaved]);
 
   // ── Watermark persistence ─────────────────────────────────────────────
   useEffect(() => {
@@ -626,7 +644,7 @@ export function HufCamPro({ onSessionSaved }: { onSessionSaved?: () => void }) {
                     </div>
 
                     <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4">
-                      <button onClick={() => setCapturedPhoto(null)}
+                      <button onClick={() => { setCapturedPhoto(null); setCapturedOrientation(null); }}
                         className="h-14 w-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center transition-colors shadow-lg">
                         <RotateCcw className="h-6 w-6 text-white" />
                       </button>
@@ -658,10 +676,14 @@ export function HufCamPro({ onSessionSaved }: { onSessionSaved?: () => void }) {
                     )}
 
                     {/* Gyro Warning */}
-                    {tiltAngle > 10 && (
+                    {requiresLevel && tiltZone !== "good" && (
                       <div className="absolute top-1/4 left-0 right-0 flex justify-center z-40 pointer-events-none">
-                        <div className="bg-red-500 text-white px-4 py-2 rounded-2xl font-black text-xs uppercase tracking-wider shadow-2xl animate-bounce flex items-center gap-2">
-                          <RotateCcw className="h-4 w-4" /> Kamera gerade halten
+                        <div className={cn(
+                          "px-4 py-2 rounded-2xl font-black text-xs uppercase tracking-wider shadow-2xl flex items-center gap-2",
+                          tiltZone === "block" ? "bg-red-500 text-white animate-bounce" : "bg-orange-500 text-white"
+                        )}>
+                          <RotateCcw className="h-4 w-4" />
+                          {tiltZone === "block" ? "Kamera gerade halten!" : `Neigung reduzieren (${Math.round(tiltAngle)}°)`}
                         </div>
                       </div>
                     )}
@@ -676,7 +698,7 @@ export function HufCamPro({ onSessionSaved }: { onSessionSaved?: () => void }) {
                     )}
 
                     {captureMode === "ai" && isCameraReady && (
-                      <CameraGuideOverlay view={currentPerspective.id as any} isLevel={isLevel} tiltAngle={tiltAngle} requiresLevel={true} />
+                      <CameraGuideOverlay view={currentPerspective.id as any} tiltZone={tiltZone} tiltAngle={tiltAngle} requiresLevel={requiresLevel} />
                     )}
                     {!isCameraReady && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black">
@@ -691,10 +713,16 @@ export function HufCamPro({ onSessionSaved }: { onSessionSaved?: () => void }) {
                           <Zap className={cn("h-6 w-6", torchOn && "fill-current")} />
                         </button>
                       )}
-                      <button onClick={captureFromCamera} disabled={!isCameraReady}
-                        className="h-20 w-20 rounded-full bg-white hover:bg-gray-100 flex items-center justify-center shadow-2xl disabled:opacity-50 border-4 border-zinc-900 group active:scale-95 transition-transform">
+                      <button onClick={captureFromCamera} disabled={!isCameraReady || !canCapture}
+                        className={cn(
+                          "h-20 w-20 rounded-full flex items-center justify-center shadow-2xl border-4 border-zinc-900 group active:scale-95 transition-all",
+                          !canCapture                           ? "bg-red-500/80 cursor-not-allowed opacity-80"
+                          : requiresLevel && tiltZone === "warn" ? "bg-orange-100 hover:bg-orange-50"
+                          :                                        "bg-white hover:bg-gray-100"
+                        )}>
                         <div className="h-16 w-16 rounded-full border-2 border-black/10 flex items-center justify-center">
-                          <Camera className="h-10 w-10 text-black group-hover:scale-110 transition-transform" />
+                          <Camera className={cn("h-10 w-10 group-hover:scale-110 transition-transform",
+                            !canCapture ? "text-white" : "text-black")} />
                         </div>
                       </button>
                       <button onClick={() => fileInputRef.current?.click()}

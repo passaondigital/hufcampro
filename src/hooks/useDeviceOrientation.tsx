@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import type { TiltZone } from "@/components/hufcam/types";
 
 interface OrientationState {
   alpha: number | null;
@@ -6,17 +7,19 @@ interface OrientationState {
   gamma: number | null;
   isLevel: boolean;
   tiltAngle: number;
+  tiltZone: TiltZone;
   hasPermission: boolean;
   isSupported: boolean;
 }
 
 const THROTTLE_INTERVAL = 100;
-const LEVEL_THRESHOLD = 5;
+const TILT_GOOD = 5;
+const TILT_WARN = 12;
 
 export function useDeviceOrientation() {
   const [orientation, setOrientation] = useState<OrientationState>({
     alpha: null, beta: null, gamma: null,
-    isLevel: true, tiltAngle: 0,
+    isLevel: true, tiltAngle: 0, tiltZone: "good",
     hasPermission: false,
     isSupported: typeof window !== "undefined" && "DeviceOrientationEvent" in window,
   });
@@ -49,8 +52,11 @@ export function useDeviceOrientation() {
       const verticalTilt = beta !== null ? Math.abs(90 - Math.abs(beta)) : 0;
       const horizontalTilt = gamma !== null ? Math.abs(gamma) : 0;
       const tiltAngle = Math.max(verticalTilt, horizontalTilt);
-      const isLevel = tiltAngle <= LEVEL_THRESHOLD;
-      const newState: OrientationState = { alpha, beta, gamma, isLevel, tiltAngle, hasPermission: true, isSupported: true };
+      const tiltZone: TiltZone =
+        tiltAngle <= TILT_GOOD ? "good" :
+        tiltAngle <= TILT_WARN ? "warn" : "block";
+      const isLevel = tiltZone === "good";
+      const newState: OrientationState = { alpha, beta, gamma, isLevel, tiltAngle, tiltZone, hasPermission: true, isSupported: true };
       const now = Date.now();
       if (now - lastUpdateTime >= THROTTLE_INTERVAL) {
         lastUpdateTime = now;

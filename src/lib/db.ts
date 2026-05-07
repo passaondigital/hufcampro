@@ -1,8 +1,23 @@
 import { openDB, type DBSchema } from 'idb';
+import type {
+  SolarMeasurementInput,
+  SolarMeasurements,
+  ReferenceScale,
+  MmMeasurements,
+} from '@/components/hufcam/types';
 
 export interface SessionCollage {
   hoofId: string;
   collageUrl: string;
+}
+
+export interface SessionSolarPhoto {
+  hoofId: string;
+  dataUrl: string;
+  measurementPoints?: SolarMeasurementInput;
+  pixelMeasurements?: SolarMeasurements;
+  referenceScale?: ReferenceScale;
+  mmMeasurements?: MmMeasurements;
 }
 
 export interface HufSession {
@@ -12,6 +27,7 @@ export interface HufSession {
   timestamp: number;
   collages: SessionCollage[];
   watermark: string;
+  solarPhotos?: SessionSolarPhoto[];
 }
 
 interface HufCamDB extends DBSchema {
@@ -45,4 +61,10 @@ export async function getSessions(): Promise<HufSession[]> {
 export async function deleteSession(id: number): Promise<void> {
   const db = await getDB();
   await db.delete('sessions', id);
+}
+
+export async function updateSession(session: HufSession): Promise<void> {
+  if (session.id === undefined) throw new Error('updateSession requires session.id');
+  const db = await getDB();
+  await db.put('sessions', session);
 }

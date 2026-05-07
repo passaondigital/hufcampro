@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
-import { Trash2, Clock, ArrowLeftRight, Download } from "lucide-react";
-import { getSessions, deleteSession, type HufSession } from "@/lib/db";
+import { Trash2, Clock, ArrowLeftRight, Download, Ruler } from "lucide-react";
+import { getSessions, deleteSession, updateSession, type HufSession, type SessionSolarPhoto } from "@/lib/db";
+import { MeasurementView } from "./MeasurementView";
+import type { SolarMeasurementInput, SolarMeasurements } from "./types";
 
 interface HistoryViewProps {
   onCompare: (sessions: [HufSession, HufSession]) => void;
@@ -11,10 +13,32 @@ export function HistoryView({ onCompare, refreshKey }: HistoryViewProps) {
   const [sessions, setSessions] = useState<HufSession[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
+  const [measuring, setMeasuring] = useState<{ sessionId: number; hoofId: string } | null>(null);
 
   useEffect(() => {
     getSessions().then(s => { setSessions(s); setLoading(false); });
   }, [refreshKey]);
+
+  const measuringSession = measuring ? sessions.find(s => s.id === measuring.sessionId) : null;
+  const measuringPhoto: SessionSolarPhoto | undefined =
+    measuringSession?.solarPhotos?.find(p => p.hoofId === measuring?.hoofId);
+
+  const handleSaveMeasurement = async (
+    points: SolarMeasurementInput,
+    measurements: SolarMeasurements,
+  ) => {
+    if (!measuringSession || !measuringPhoto || measuringSession.id === undefined) return;
+    const updatedPhotos: SessionSolarPhoto[] =
+      (measuringSession.solarPhotos ?? []).map(p =>
+        p.hoofId === measuringPhoto.hoofId
+          ? { ...p, measurementPoints: points, pixelMeasurements: measurements }
+          : p,
+      );
+    const updated: HufSession = { ...measuringSession, solarPhotos: updatedPhotos };
+    await updateSession(updated);
+    setSessions(prev => prev.map(s => (s.id === updated.id ? updated : s)));
+    setMeasuring(null);
+  };
 
   const handleDelete = async (id: number) => {
     await deleteSession(id);
@@ -118,9 +142,44 @@ export function HistoryView({ onCompare, refreshKey }: HistoryViewProps) {
                 </div>
               ))}
             </div>
+
+            {/* Solar measurement actions */}
+            {session.solarPhotos && session.solarPhotos.length > 0 && (
+              <div className="flex flex-wrap gap-2 pt-1 border-t border-zinc-800/60">
+                {session.solarPhotos.map(sp => {
+                  const measured = !!sp.pixelMeasurements;
+                  return (
+                    <button
+                      key={sp.hoofId}
+                      onClick={() => session.id !== undefined && setMeasuring({ sessionId: session.id, hoofId: sp.hoofId })}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                        measured
+                          ? "bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25"
+                          : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                      }`}
+                      title={measured ? "Messpunkte vorhanden – bearbeiten" : "Sohle vermessen"}
+                    >
+                      <Ruler className="h-3.5 w-3.5" />
+                      {sp.hoofId} · {measured ? "vermessen" : "Sohle vermessen"}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         );
       })}
+
+      {measuring && measuringSession && measuringPhoto && (
+        <MeasurementView
+          hoofId={measuringPhoto.hoofId}
+          horseName={measuringSession.horseName}
+          dataUrl={measuringPhoto.dataUrl}
+          initialPoints={measuringPhoto.measurementPoints}
+          onSave={handleSaveMeasurement}
+          onClose={() => setMeasuring(null)}
+        />
+      )}
     </div>
   );
 }
