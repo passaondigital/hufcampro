@@ -9,15 +9,19 @@ https://hufcampro.de
 | Was | Wo |
 |-----|-----|
 | Quellcode | `/root/hufcampro/src` |
-| Build | `/root/hufcampro/dist` |
+| Build (lokal, nicht live) | `/root/hufcampro/dist` |
+| **Live-Verzeichnis (nginx)** | `/var/www/hufcampro/dist` |
+| Deploy-Skript | `/root/hufcampro/deploy.sh` |
 | rembg API | `/root/hufcampro-rembg/main.py` |
 | Nginx Config | `/etc/nginx/sites-available/hufcampro.de` |
 | PM2 Logs | `pm2 logs hufcampro-rembg` |
 
 ## Ein-Befehl Deploy
 ```bash
-cd /root/hufcampro && npm run build && systemctl reload nginx
+cd /root/hufcampro && bash deploy.sh
 ```
+
+`deploy.sh` baut **und** rsynct nach `/var/www/hufcampro/dist`. Ein blosses `npm run build` ist **nicht** ausreichend, weil nginx aus `/var/www/hufcampro/dist` ausliefert. Auch `systemctl reload nginx` allein bringt nichts, solange das Live-Verzeichnis nicht aktualisiert wurde.
 
 ## Komponenten
 | Datei | Funktion |

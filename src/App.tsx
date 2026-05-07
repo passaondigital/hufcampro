@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Landing from "./pages/Landing";
 import HufCamApp from "./pages/HufCamApp";
 import { Legal } from "./pages/Legal";
+import { UpdatePrompt } from "./components/UpdatePrompt";
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
         <Route path="/legal" element={<Legal />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <UpdatePrompt />
     </BrowserRouter>
   );
 }

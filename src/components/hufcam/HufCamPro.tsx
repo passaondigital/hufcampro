@@ -10,7 +10,6 @@ import { GuideOverlay } from "./GuideOverlay";
 import { useDeviceOrientation } from "@/hooks/useDeviceOrientation";
 import { saveSession } from "@/lib/db";
 import { HOOF_VIEW_CONFIGS, type PerspectiveId, type PhotoData, type HoofData, type OrientationSnapshot } from "./types";
-import jsPDF from "jspdf";
 
 const HOOVES = [
   { id: "VL", label: "Vorne Links", short: "VL" },
@@ -343,6 +342,7 @@ export function HufCamPro({ onSessionSaved }: { onSessionSaved?: () => void }) {
   // ── PDF Export ────────────────────────────────────────────────────────
   const exportPDF = useCallback(async () => {
     if (completedCollages.length === 0) return;
+    const { default: jsPDF } = await import("jspdf");
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const pw = 190, margin = 10;
     // Header

@@ -67,12 +67,24 @@
 - RLS: Lesen nur `approved=true`, Schreiben `public`
 
 ## Update / Deploy Workflow
+
+**Korrekter Live-Deploy:**
 ```bash
 cd /root/hufcampro
-# Code ändern
-npm run build
-systemctl reload nginx
+bash deploy.sh
 ```
+
+`deploy.sh` macht zwei Dinge:
+1. `npm run build` (schreibt nach `/root/hufcampro/dist`)
+2. `rsync -a --delete dist/ /var/www/hufcampro/dist/`
+
+**Wichtig — typische Falle:**
+- nginx liefert die Live-Site aus `/var/www/hufcampro/dist`, **nicht** aus `/root/hufcampro/dist`.
+- `npm run build` allein baut nur lokal nach `/root/hufcampro/dist` und schaltet **nichts** live.
+- `systemctl reload nginx` allein reicht ebenfalls nicht — nginx liest weiterhin den alten Stand aus `/var/www/hufcampro/dist`, solange dorthin nicht gerysncet wurde.
+- Faustregel: **Immer `bash deploy.sh` benutzen**, sonst sieht der User auf hufcampro.de den alten Stand.
+
+Nach dem Deploy aktualisiert der Service-Worker den Client beim nächsten Aufruf automatisch (`registerType: 'autoUpdate'`). Auf installierten PWAs muss die App ggf. einmal komplett geschlossen und neu geöffnet werden, damit der neue Stand sichtbar wird.
 
 ## rembg neu starten (falls nötig)
 ```bash
